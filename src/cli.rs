@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::Path;
 use crate::config;
@@ -36,6 +36,17 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Initialize a new .ai workspace
+    Init {
+        /// Target directory (default: current directory)
+        dir: Option<std::path::PathBuf>,
+        /// Create missing files without overwriting existing ones
+        #[arg(long)]
+        force: bool,
+        /// Create and overwrite all files
+        #[arg(long, conflicts_with = "force")]
+        r#override: bool,
+    },
     /// List available or installed resources
     List {
         #[arg(value_enum)]
@@ -110,8 +121,109 @@ pub enum GitCommands {
     Push,
 }
 
+pub fn init_workspace(dir: Option<std::path::PathBuf>, force: bool, override_files: bool) -> Result<()> {
+    let target = match dir {
+        Some(d) => d,
+        None => std::env::current_dir().context("getting current dir")?,
+    };
+
+    std::fs::create_dir_all(&target)?;
+
+    // Check if directory has content (excluding .git)
+    let has_content = std::fs::read_dir(&target)
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .any(|e| e.file_name() != ".git")
+        })
+        .unwrap_or(false);
+
+    if has_content && !force && !override_files {
+        anyhow::bail!(
+            "Directory '{}' is not empty. Use --force to create missing files, or --override to overwrite all files.",
+            target.display()
+        );
+    }
+
+    // Files to create: (relative path, content)
+    let default_gitignore = "\
+# Repo shallow clones
+/repo/*/
+
+# Manager binary (standalone git repo)
+/manager/
+
+# User local config (not synced)
+config.local.toml
+user.local/
+";
+
+    let default_config = "\
+# .ai workspace configuration
+# Add repos, skills, agents, instructions, hooks and workflows here.
+
+# Example:
+# [[repos]]
+# name = \"awesome-copilot\"
+# url = \"https://github.com/github/awesome-copilot\"
+# branch = \"main\"
+";
+
+    let files: &[(&str, &str)] = &[
+        (".gitignore",              default_gitignore),
+        ("config.toml",             default_config),
+        ("skills/.gitkeep",         ""),
+        ("agents/.gitkeep",         ""),
+        ("instructions/.gitkeep",   ""),
+        ("hooks/.gitkeep",          ""),
+        ("workflows/.gitkeep",      ""),
+        ("repo/.gitkeep",           ""),
+    ];
+
+    for (rel, content) in files {
+        let path = target.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        if path.exists() && !override_files {
+            println!("  skip   {}", rel);
+            continue;
+        }
+        std::fs::write(&path, content)?;
+        println!("  create {}", rel);
+    }
+
+    // Init git repo if not already initialised
+    let git_dir = target.join(".git");
+    if !git_dir.exists() {
+        let status = std::process::Command::new("git")
+            .args(["init", target.to_str().unwrap_or(".")])
+            .status()?;
+        if !status.success() {
+            anyhow::bail!("git init failed");
+        }
+        println!("  git init");
+    }
+
+    // Initial commit
+    let add = std::process::Command::new("git")
+        .current_dir(&target)
+        .args(["add", "-A"])
+        .status()?;
+    if add.success() {
+        let _ = std::process::Command::new("git")
+            .current_dir(&target)
+            .args(["commit", "-m", "Initial commit"])
+            .status();
+    }
+
+    println!("\nWorkspace initialised at '{}'", target.display());
+    Ok(())
+}
+
 pub fn run(root: &Path, cmd: Commands) -> Result<()> {
     match cmd {
+        Commands::Init { .. } => unreachable!("Init is handled before run()"),
         Commands::List { resource_type, installed, source } => {
             let rtype: ResourceType = resource_type.into();
             let config = config::merged(root)?;
