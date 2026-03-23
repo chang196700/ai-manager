@@ -119,6 +119,8 @@ pub struct CopilotCliStatus {
 pub struct VscodeStatus {
     pub config_path: PathBuf,
     pub config_exists: bool,
+    pub skills_ok: bool,
+    pub agents_ok: bool,
     pub instructions_ok: bool,
 }
 
@@ -160,6 +162,24 @@ pub fn check_status(root: &Path) -> IntegrationStatus {
     } else {
         false
     };
+    let skills_dir = root.join("skills");
+    let vscode_skills_ok = if vscode_path.exists() {
+        match read_json(&vscode_path) {
+            Ok(v) => dir_in_vscode_map(&v, "chat.agentSkillsLocations", &skills_dir),
+            Err(_) => false,
+        }
+    } else {
+        false
+    };
+    let agents_dir_vs = root.join("agents");
+    let vscode_agents_ok = if vscode_path.exists() {
+        match read_json(&vscode_path) {
+            Ok(v) => dir_in_vscode_map(&v, "chat.agentFilesLocations", &agents_dir_vs),
+            Err(_) => false,
+        }
+    } else {
+        false
+    };
 
     // Claude
     let junction = claude_commands_path();
@@ -174,6 +194,8 @@ pub fn check_status(root: &Path) -> IntegrationStatus {
         vscode: VscodeStatus {
             config_path: vscode_path.clone(),
             config_exists: vscode_path.exists(),
+            skills_ok: vscode_skills_ok,
+            agents_ok: vscode_agents_ok,
             instructions_ok,
         },
         claude: ClaudeStatus {
@@ -198,6 +220,8 @@ pub fn print_status(root: &Path) {
     if !s.vscode.config_exists {
         println!("  [!] settings.json not found");
     } else {
+        check_mark(s.vscode.skills_ok,       &format!("chat.agentSkillsLocations        {}", root.join("skills").display()));
+        check_mark(s.vscode.agents_ok,       &format!("chat.agentFilesLocations         {}", root.join("agents").display()));
         check_mark(s.vscode.instructions_ok, &format!("chat.instructionsFilesLocations  {}", root.join("instructions").display()));
     }
 
@@ -275,19 +299,37 @@ fn ensure_dir_in_array(v: &mut Value, key: &str, dir: &Path) -> bool {
 
 // ── VS Code integration ───────────────────────────────────────────────────────
 
-fn instructions_in_vscode(v: &Value, dir: &Path) -> bool {
+/// Check whether `dir` appears as a key in a VS Code map-style setting.
+fn dir_in_vscode_map(v: &Value, setting_key: &str, dir: &Path) -> bool {
     let dir_str = format!("{}\\", dir.to_string_lossy().trim_end_matches('\\'));
-    v.get("chat.instructionsFilesLocations")
+    v.get(setting_key)
         .and_then(|o| o.as_object())
         .map(|m| m.keys().any(|k| paths_equal(k, &dir_str) || paths_equal(k, dir.to_str().unwrap_or(""))))
         .unwrap_or(false)
 }
 
-pub fn integrate_vscode(root: &Path, _resources: &[ResourceType], dry_run: bool) -> Result<()> {
-    // Only Instructions is accepted (enforced by VscodeResource enum)
-    let instrs_dir = root.join("instructions");
-    let config_path = vscode_settings_path();
+fn instructions_in_vscode(v: &Value, dir: &Path) -> bool {
+    dir_in_vscode_map(v, "chat.instructionsFilesLocations", dir)
+}
 
+/// Ensure `dir` is present as a key (→ true) in a VS Code map-style setting.
+/// Returns true if a change was made.
+fn ensure_dir_in_vscode_map(v: &mut Value, setting_key: &str, dir: &Path) -> bool {
+    let dir_str = format!("{}\\", dir.to_string_lossy().trim_end_matches('\\'));
+    if dir_in_vscode_map(v, setting_key, dir) {
+        return false;
+    }
+    let obj = v.as_object_mut().expect("settings.json root is not an object");
+    let map = obj.entry(setting_key)
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if let Some(m) = map.as_object_mut() {
+        m.insert(dir_str, Value::Bool(true));
+    }
+    true
+}
+
+pub fn integrate_vscode(root: &Path, resources: &[ResourceType], dry_run: bool) -> Result<()> {
+    let config_path = vscode_settings_path();
     if !config_path.exists() {
         println!("VS Code settings not found at {}", config_path.display());
         println!("Ensure VS Code is installed and has been launched at least once.");
@@ -295,31 +337,42 @@ pub fn integrate_vscode(root: &Path, _resources: &[ResourceType], dry_run: bool)
     }
 
     let mut v = read_json(&config_path)?;
-    let key = "chat.instructionsFilesLocations";
-    // Normalise: trailing backslash
-    let dir_str = format!("{}\\", instrs_dir.to_string_lossy().trim_end_matches('\\'));
 
-    let already = instructions_in_vscode(&v, &instrs_dir);
-    if already {
+    // Map each requested resource to its VSCode setting key and workspace dir
+    let targets: Vec<(&str, std::path::PathBuf)> = resources.iter().filter_map(|r| match r {
+        ResourceType::Skills       => Some(("chat.agentSkillsLocations",       root.join("skills"))),
+        ResourceType::Agents       => Some(("chat.agentFilesLocations",        root.join("agents"))),
+        ResourceType::Instructions => Some(("chat.instructionsFilesLocations", root.join("instructions"))),
+        _ => None,
+    }).collect();
+
+    let mut changes: Vec<(&str, std::path::PathBuf)> = Vec::new();
+    for (key, dir) in &targets {
+        if ensure_dir_in_vscode_map(&mut v, key, dir) {
+            changes.push((key, dir.clone()));
+        }
+    }
+
+    if changes.is_empty() {
         println!("VS Code: already configured, no changes needed.");
         return Ok(());
     }
 
     if dry_run {
-        println!("VS Code (dry-run): would add to {key} in {}", config_path.display());
-        println!("  {} => true", dir_str);
+        println!("VS Code (dry-run): would update {}", config_path.display());
+        for (key, dir) in &changes {
+            let dir_str = format!("{}\\", dir.to_string_lossy().trim_end_matches('\\'));
+            println!("  {key} += \"{}\" => true", dir_str);
+        }
         return Ok(());
     }
 
-    // Ensure the key exists as an object
-    let obj = v.as_object_mut().context("settings.json root is not an object")?;
-    let loc = obj.entry(key).or_insert_with(|| Value::Object(serde_json::Map::new()));
-    if let Some(map) = loc.as_object_mut() {
-        map.insert(dir_str.clone(), Value::Bool(true));
-    }
     write_json(&config_path, &v)?;
     println!("VS Code: updated {}", config_path.display());
-    println!("  {key} += \"{}\" => true", dir_str);
+    for (key, dir) in &changes {
+        let dir_str = format!("{}\\", dir.to_string_lossy().trim_end_matches('\\'));
+        println!("  {key} += \"{}\" => true", dir_str);
+    }
     Ok(())
 }
 
@@ -369,10 +422,11 @@ pub fn integrate_all(root: &Path, resources: &[ResourceType], dry_run: bool) -> 
     } else {
         resources.iter().filter(|r| **r == ResourceType::Skills).cloned().collect()
     };
+    let vscode_supported = [ResourceType::Skills, ResourceType::Agents, ResourceType::Instructions];
     let vscode_res: Vec<ResourceType> = if resources.is_empty() {
-        vec![ResourceType::Instructions]
+        vscode_supported.to_vec()
     } else {
-        resources.iter().filter(|r| **r == ResourceType::Instructions).cloned().collect()
+        resources.iter().filter(|r| vscode_supported.contains(r)).cloned().collect()
     };
     let claude_res: Vec<ResourceType> = if resources.is_empty() {
         vec![ResourceType::Agents]
@@ -389,7 +443,7 @@ pub fn integrate_all(root: &Path, resources: &[ResourceType], dry_run: bool) -> 
     println!();
     println!("=== VS Code ===");
     if vscode_res.is_empty() {
-        println!("VS Code: no supported resources in selection (supported: instructions), skipping.");
+        println!("VS Code: no supported resources in selection (supported: skills, agents, instructions), skipping.");
     } else {
         integrate_vscode(root, &vscode_res, dry_run)?;
     }

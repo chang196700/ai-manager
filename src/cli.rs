@@ -180,12 +180,16 @@ impl From<CopilotCliResource> for ResourceType {
 /// Resources supported by VS Code Copilot integration
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum VscodeResource {
+    Skills,
+    Agents,
     Instructions,
 }
 
 impl From<VscodeResource> for ResourceType {
     fn from(v: VscodeResource) -> Self {
         match v {
+            VscodeResource::Skills       => ResourceType::Skills,
+            VscodeResource::Agents       => ResourceType::Agents,
             VscodeResource::Instructions => ResourceType::Instructions,
         }
     }
