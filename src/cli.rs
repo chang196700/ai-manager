@@ -1,10 +1,35 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
+use serde::Deserialize;
 use std::path::Path;
 use crate::config;
 use crate::resource::{self, OpDesc, ResourceType};
 use crate::repo;
 use crate::git;
+
+// Known repos embedded at compile time
+const KNOWN_REPOS_TOML: &str = include_str!("known_repos.toml");
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct KnownRepo {
+    pub name: String,
+    pub url: String,
+    #[serde(default)]
+    pub branch: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct KnownRepoFile {
+    repos: Vec<KnownRepo>,
+}
+
+pub fn known_repos() -> Vec<KnownRepo> {
+    toml::from_str::<KnownRepoFile>(KNOWN_REPOS_TOML)
+        .map(|f| f.repos)
+        .unwrap_or_default()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum ResourceTypeCli {
@@ -106,6 +131,22 @@ pub enum RepoCommands {
     },
     /// List configured repos
     List,
+    /// Manage built-in known repos
+    #[command(subcommand)]
+    Known(KnownCommands),
+}
+
+#[derive(Subcommand)]
+pub enum KnownCommands {
+    /// List all built-in known repos
+    List,
+    /// Add a known repo to config by name
+    Add {
+        name: String,
+        /// Save to config.local.toml
+        #[arg(long)]
+        local: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -402,6 +443,58 @@ pub fn run(root: &Path, cmd: Commands) -> Result<()> {
                     for r in &config.repos {
                         let cloned = if repo::is_cloned(root, &r.name) { "✓" } else { " " };
                         println!("  [{}] {} — {}", cloned, r.name, r.url);
+                    }
+                }
+            }
+            RepoCommands::Known(known_cmd) => {
+                let all_known = known_repos();
+                match known_cmd {
+                    KnownCommands::List => {
+                        let config = config::merged(root)?;
+                        let configured_names: std::collections::HashSet<&str> =
+                            config.repos.iter().map(|r| r.name.as_str()).collect();
+                        if all_known.is_empty() {
+                            println!("No known repos defined.");
+                        } else {
+                            println!("Known repos:");
+                            for kr in &all_known {
+                                let mark = if configured_names.contains(kr.name.as_str()) { "✓" } else { " " };
+                                let desc = kr.description.as_deref().unwrap_or("");
+                                let branch = kr.branch.as_deref().map(|b| format!(" [{}]", b)).unwrap_or_default();
+                                println!("  [{}] {}{} — {}", mark, kr.name, branch, desc);
+                            }
+                        }
+                    }
+                    KnownCommands::Add { name, local } => {
+                        let kr = all_known.iter().find(|r| r.name == name)
+                            .ok_or_else(|| anyhow::anyhow!(
+                                "Unknown repo '{}'. Run `repo known list` to see available repos.", name
+                            ))?;
+                        let repo_cfg = crate::config::RepoConfig {
+                            name: kr.name.clone(),
+                            url: kr.url.clone(),
+                            branch: kr.branch.clone(),
+                            ..Default::default()
+                        };
+                        if local {
+                            let mut cfg = config::load_local(root)?;
+                            cfg.repos.retain(|r| r.name != kr.name);
+                            cfg.repos.push(repo_cfg);
+                            config::save_local(root, &cfg)?;
+                            println!("Added known repo '{}' to config.local.toml", kr.name);
+                        } else {
+                            let mut cfg = config::load_shared(root)?;
+                            cfg.repos.retain(|r| r.name != kr.name);
+                            cfg.repos.push(repo_cfg);
+                            config::save_shared(root, &cfg)?;
+                            println!("Added known repo '{}' to config.toml", kr.name);
+                            let op = OpDesc {
+                                op: crate::resource::OpType::RepoAdd,
+                                resource_type: None,
+                                key: kr.name.clone(),
+                            };
+                            git::auto_commit(root, &[op])?;
+                        }
                     }
                 }
             }

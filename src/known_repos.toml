@@ -1,0 +1,4 @@
+[[repos]]
+name = "awesome-copilot"
+url = "https://github.com/github/awesome-copilot"
+description = "Official GitHub Copilot skills, agents, instructions and more"
