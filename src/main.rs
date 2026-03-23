@@ -1,6 +1,7 @@
 mod cli;
 mod config;
 mod git;
+mod integrate;
 mod repo;
 mod resource;
 mod tui;

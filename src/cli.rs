@@ -120,6 +120,9 @@ pub enum Commands {
     /// Git operations
     #[command(subcommand)]
     Git(GitCommands),
+    /// Integrate with external AI tools (Copilot CLI, VS Code, Claude Code)
+    #[command(subcommand)]
+    Integrate(IntegrateCommands),
 }
 
 #[derive(Subcommand)]
@@ -159,6 +162,91 @@ pub enum KnownCommands {
         local: bool,
     },
 }
+
+/// Resources supported by GitHub Copilot CLI integration
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum CopilotCliResource {
+    Skills,
+}
+
+impl From<CopilotCliResource> for ResourceType {
+    fn from(v: CopilotCliResource) -> Self {
+        match v {
+            CopilotCliResource::Skills => ResourceType::Skills,
+        }
+    }
+}
+
+/// Resources supported by VS Code Copilot integration
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum VscodeResource {
+    Instructions,
+}
+
+impl From<VscodeResource> for ResourceType {
+    fn from(v: VscodeResource) -> Self {
+        match v {
+            VscodeResource::Instructions => ResourceType::Instructions,
+        }
+    }
+}
+
+/// Resources supported by Claude Code integration
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ClaudeCodeResource {
+    Agents,
+}
+
+impl From<ClaudeCodeResource> for ResourceType {
+    fn from(v: ClaudeCodeResource) -> Self {
+        match v {
+            ClaudeCodeResource::Agents => ResourceType::Agents,
+        }
+    }
+}
+
+#[derive(Subcommand)]
+pub enum IntegrateCommands {
+    /// Show integration status for all tools
+    Status,
+    /// Configure GitHub Copilot CLI skill directories
+    CopilotCli {
+        /// Resources to integrate. Must specify at least one.
+        #[arg(value_enum, required = true)]
+        resources: Vec<CopilotCliResource>,
+        /// Show what would be changed without applying
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Configure VS Code Copilot instruction paths
+    Vscode {
+        /// Resources to integrate. Must specify at least one.
+        #[arg(value_enum, required = true)]
+        resources: Vec<VscodeResource>,
+        /// Show what would be changed without applying
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Configure Claude Code agent commands directory
+    ClaudeCode {
+        /// Resources to integrate. Must specify at least one.
+        #[arg(value_enum, required = true)]
+        resources: Vec<ClaudeCodeResource>,
+        /// Show what would be changed without applying
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Integrate with all tools (optionally filter resource types)
+    All {
+        /// Resource types to include (default: all supported per tool)
+        #[arg(value_enum)]
+        resources: Vec<ResourceTypeCli>,
+        /// Show what would be changed without applying
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
 
 #[derive(Subcommand)]
 pub enum GitCommands {
@@ -558,6 +646,28 @@ pub fn run(root: &Path, cmd: Commands) -> Result<()> {
             GitCommands::Push => {
                 git::push(root)?;
                 println!("Pushed.");
+            }
+        },
+
+        Commands::Integrate(int_cmd) => match int_cmd {
+            IntegrateCommands::Status => {
+                crate::integrate::print_status(root);
+            }
+            IntegrateCommands::CopilotCli { resources, dry_run } => {
+                let res: Vec<ResourceType> = resources.into_iter().map(Into::into).collect();
+                crate::integrate::integrate_copilot_cli(root, &res, dry_run)?;
+            }
+            IntegrateCommands::Vscode { resources, dry_run } => {
+                let res: Vec<ResourceType> = resources.into_iter().map(Into::into).collect();
+                crate::integrate::integrate_vscode(root, &res, dry_run)?;
+            }
+            IntegrateCommands::ClaudeCode { resources, dry_run } => {
+                let res: Vec<ResourceType> = resources.into_iter().map(Into::into).collect();
+                crate::integrate::integrate_claude_code(root, &res, dry_run)?;
+            }
+            IntegrateCommands::All { resources, dry_run } => {
+                let res: Vec<ResourceType> = resources.into_iter().map(Into::into).collect();
+                crate::integrate::integrate_all(root, &res, dry_run)?;
             }
         },
     }
