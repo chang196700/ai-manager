@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::config::{self, Config};
-use crate::resource::{self, OpDesc, ResourceType};
+use crate::resource::{self, ResourceType};
 use crate::git;
 
 #[derive(Debug, Clone)]
@@ -41,7 +41,6 @@ pub struct App {
     pub filter_mode: bool,
     pub items: Vec<ResourceItem>,
     pub git_status: String,
-    pub pending_ops: Vec<OpDesc>,
     pub popup: Option<PopupState>,
     pub message: Option<String>,
     pub page_size: usize,
@@ -61,7 +60,6 @@ impl App {
             filter_mode: false,
             items: Vec::new(),
             git_status: String::new(),
-            pending_ops: Vec::new(),
             popup: None,
             message: None,
             page_size: 10,

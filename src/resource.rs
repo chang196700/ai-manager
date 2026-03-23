@@ -79,15 +79,6 @@ pub enum SourceType {
     User,
 }
 
-impl SourceType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            SourceType::Repo => "repo",
-            SourceType::User => "user",
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct LinkSource {
     pub source_type: SourceType,
@@ -125,10 +116,6 @@ impl LinkSource {
             }
         }
     }
-
-    pub fn to_value(&self, relpath: &str) -> String {
-        format!("{}:{}:{}", self.source_type.as_str(), self.source_name, relpath)
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -143,7 +130,6 @@ pub enum OpType {
     Add,
     Remove,
     RepoAdd,
-    Update,
 }
 
 #[derive(Debug, Clone)]
@@ -159,7 +145,6 @@ impl OpDesc {
             OpType::Add => "add",
             OpType::Remove => "remove",
             OpType::RepoAdd => "add repo",
-            OpType::Update => "update",
         };
         if let Some(rt) = &self.resource_type {
             format!("{} {} {}", op_str, rt.name(), self.key)
