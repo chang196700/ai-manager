@@ -129,6 +129,15 @@ pub enum RepoCommands {
         #[arg(long)]
         local: bool,
     },
+    /// Remove a repo from config
+    Remove {
+        name: String,
+    },
+    /// Update (clone or pull) repos
+    Update {
+        /// Specific repo name (default: all)
+        repo: Option<String>,
+    },
     /// List configured repos
     List,
     /// Manage built-in known repos
@@ -432,6 +441,48 @@ pub fn run(root: &Path, cmd: Commands) -> Result<()> {
                         key: name,
                     };
                     git::auto_commit(root, &[op])?;
+                }
+            }
+            RepoCommands::Remove { name } => {
+                let mut shared = config::load_shared(root)?;
+                let mut local_cfg = config::load_local(root)?;
+                let in_shared = shared.repos.iter().any(|r| r.name == name);
+                let in_local  = local_cfg.repos.iter().any(|r| r.name == name);
+                if !in_shared && !in_local {
+                    anyhow::bail!("Repo '{}' not found in config.", name);
+                }
+                shared.repos.retain(|r| r.name != name);
+                local_cfg.repos.retain(|r| r.name != name);
+                config::save_shared(root, &shared)?;
+                config::save_local(root, &local_cfg)?;
+                println!("Removed repo '{}'", name);
+                let op = OpDesc {
+                    op: crate::resource::OpType::RepoAdd, // reuse closest type
+                    resource_type: None,
+                    key: name,
+                };
+                git::auto_commit(root, &[op])?;
+            }
+            RepoCommands::Update { repo } => {
+                let cfg = config::merged(root)?;
+                let repos: Vec<_> = if let Some(ref name) = repo {
+                    cfg.repos.iter().filter(|r| &r.name == name).collect()
+                } else {
+                    cfg.repos.iter().collect()
+                };
+                if repos.is_empty() {
+                    println!("No repos to update.");
+                }
+                for r in repos {
+                    if repo::is_cloned(root, &r.name) {
+                        print!("Updating {}... ", r.name);
+                        repo::update_repo(root, &r.name, r.branch.as_deref())?;
+                        println!("done");
+                    } else {
+                        print!("Cloning {}... ", r.name);
+                        repo::clone_repo(root, &r.name, &r.url, r.branch.as_deref())?;
+                        println!("done");
+                    }
                 }
             }
             RepoCommands::List => {
