@@ -171,6 +171,30 @@ pub enum GitCommands {
     Push,
 }
 
+fn do_repo_update(root: &Path, name_filter: Option<&str>) -> Result<()> {
+    let cfg = config::merged(root)?;
+    let repos: Vec<_> = if let Some(name) = name_filter {
+        cfg.repos.iter().filter(|r| r.name == name).collect()
+    } else {
+        cfg.repos.iter().collect()
+    };
+    if repos.is_empty() {
+        println!("No repos to update.");
+    }
+    for r in repos {
+        if repo::is_cloned(root, &r.name) {
+            print!("Updating {}... ", r.name);
+            repo::update_repo(root, &r.name, r.branch.as_deref())?;
+            println!("done");
+        } else {
+            print!("Cloning {}... ", r.name);
+            repo::clone_repo(root, &r.name, &r.url, r.branch.as_deref())?;
+            println!("done");
+        }
+    }
+    Ok(())
+}
+
 pub fn init_workspace(dir: Option<std::path::PathBuf>, force: bool, override_files: bool) -> Result<()> {
     let target = match dir {
         Some(d) => d,
@@ -366,23 +390,7 @@ pub fn run(root: &Path, cmd: Commands) -> Result<()> {
         }
 
         Commands::Update { repo } => {
-            let config = config::merged(root)?;
-            let repos: Vec<_> = if let Some(name) = repo {
-                config.repos.iter().filter(|r| r.name == name).collect()
-            } else {
-                config.repos.iter().collect()
-            };
-            for r in repos {
-                if repo::is_cloned(root, &r.name) {
-                    print!("Updating {}... ", r.name);
-                    repo::update_repo(root, &r.name, r.branch.as_deref())?;
-                    println!("done");
-                } else {
-                    print!("Cloning {}... ", r.name);
-                    repo::clone_repo(root, &r.name, &r.url, r.branch.as_deref())?;
-                    println!("done");
-                }
-            }
+            do_repo_update(root, repo.as_deref())?;
         }
 
         Commands::Apply => {
@@ -464,26 +472,7 @@ pub fn run(root: &Path, cmd: Commands) -> Result<()> {
                 git::auto_commit(root, &[op])?;
             }
             RepoCommands::Update { repo } => {
-                let cfg = config::merged(root)?;
-                let repos: Vec<_> = if let Some(ref name) = repo {
-                    cfg.repos.iter().filter(|r| &r.name == name).collect()
-                } else {
-                    cfg.repos.iter().collect()
-                };
-                if repos.is_empty() {
-                    println!("No repos to update.");
-                }
-                for r in repos {
-                    if repo::is_cloned(root, &r.name) {
-                        print!("Updating {}... ", r.name);
-                        repo::update_repo(root, &r.name, r.branch.as_deref())?;
-                        println!("done");
-                    } else {
-                        print!("Cloning {}... ", r.name);
-                        repo::clone_repo(root, &r.name, &r.url, r.branch.as_deref())?;
-                        println!("done");
-                    }
-                }
+                do_repo_update(root, repo.as_deref())?;
             }
             RepoCommands::List => {
                 let config = config::merged(root)?;
