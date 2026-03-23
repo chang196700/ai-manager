@@ -418,10 +418,11 @@ fn handle_update_repos(app: &mut App) -> Result<()> {
     for r in &merged.repos {
         let name = r.name.clone();
         let url = r.url.clone();
+        let branch = r.branch.as_deref();
         if crate::repo::is_cloned(&app.root, &name) {
-            let _ = crate::repo::update_repo(&app.root, &name);
+            let _ = crate::repo::update_repo(&app.root, &name, branch);
         } else {
-            let _ = crate::repo::clone_repo(&app.root, &name, &url);
+            let _ = crate::repo::clone_repo(&app.root, &name, &url, branch);
         }
     }
     app.message = Some("Repos updated.".to_string());

@@ -8,6 +8,8 @@ pub struct RepoConfig {
     pub name: String,
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub skills: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agents: Option<Vec<String>>,

@@ -213,11 +213,11 @@ pub fn run(root: &Path, cmd: Commands) -> Result<()> {
             for r in repos {
                 if repo::is_cloned(root, &r.name) {
                     print!("Updating {}... ", r.name);
-                    repo::update_repo(root, &r.name)?;
+                    repo::update_repo(root, &r.name, r.branch.as_deref())?;
                     println!("done");
                 } else {
                     print!("Cloning {}... ", r.name);
-                    repo::clone_repo(root, &r.name, &r.url)?;
+                    repo::clone_repo(root, &r.name, &r.url, r.branch.as_deref())?;
                     println!("done");
                 }
             }
