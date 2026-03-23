@@ -87,12 +87,12 @@ pub fn save_local(root: &Path, config: &Config) -> Result<()> {
 pub fn find_root() -> Result<PathBuf> {
     let mut current = std::env::current_dir().context("getting current dir")?;
     loop {
-        if current.join("config.toml").exists() && current.join("manager").is_dir() {
+        if current.join("config.toml").exists() {
             return Ok(current);
         }
         match current.parent() {
             Some(p) => current = p.to_path_buf(),
-            None => anyhow::bail!("Could not find .ai workspace root (looking for config.toml + manager/ dir)"),
+            None => anyhow::bail!("Could not find .ai workspace root (looking for config.toml)"),
         }
     }
 }
