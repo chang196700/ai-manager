@@ -16,10 +16,15 @@ pub fn clone_repo(root: &Path, name: &str, url: &str) -> Result<()> {
 pub fn update_repo(root: &Path, name: &str) -> Result<()> {
     let repo_path = root.join("repo").join(name);
     if !repo_path.exists() { anyhow::bail!("repo {} not cloned", name); }
-    let status = Command::new("git")
-        .args(["-C", repo_path.to_str().unwrap_or(name), "pull"])
+    let dir = repo_path.to_str().unwrap_or(name);
+    let fetch = Command::new("git")
+        .args(["-C", dir, "fetch", "--depth=1", "origin"])
         .status()?;
-    if !status.success() { anyhow::bail!("git pull failed for {}", name); }
+    if !fetch.success() { anyhow::bail!("git fetch failed for {}", name); }
+    let reset = Command::new("git")
+        .args(["-C", dir, "reset", "--hard", "origin/HEAD"])
+        .status()?;
+    if !reset.success() { anyhow::bail!("git reset failed for {}", name); }
     Ok(())
 }
 
