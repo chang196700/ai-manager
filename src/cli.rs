@@ -112,6 +112,8 @@ pub enum Commands {
     },
     /// Apply all links from config (create missing links)
     Apply,
+    /// Launch interactive TUI
+    Tui,
     /// Manage repos
     #[command(subcommand)]
     Repo(RepoCommands),
@@ -422,6 +424,10 @@ pub fn run(root: &Path, cmd: Commands) -> Result<()> {
             if !ops.is_empty() {
                 config::save_shared(root, &shared)?;
             }
+        }
+
+        Commands::Tui => {
+            crate::tui::run(root.to_path_buf())?;
         }
 
         Commands::Repo(repo_cmd) => match repo_cmd {

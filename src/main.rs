@@ -20,7 +20,12 @@ fn main() -> Result<()> {
 
     match cli_args.command {
         Some(cmd) => cli::run(&root, cmd),
-        None => tui::run(root),
+        None => {
+            use clap::CommandFactory;
+            cli::Cli::command().print_help()?;
+            println!();
+            Ok(())
+        }
     }
 }
 
