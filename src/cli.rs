@@ -167,12 +167,15 @@ pub enum KnownCommands {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum CopilotCliResource {
     Skills,
+    /// All supported resources
+    All,
 }
 
-impl From<CopilotCliResource> for ResourceType {
+impl From<CopilotCliResource> for Vec<ResourceType> {
     fn from(v: CopilotCliResource) -> Self {
         match v {
-            CopilotCliResource::Skills => ResourceType::Skills,
+            CopilotCliResource::Skills => vec![ResourceType::Skills],
+            CopilotCliResource::All    => vec![ResourceType::Skills],
         }
     }
 }
@@ -183,14 +186,17 @@ pub enum VscodeResource {
     Skills,
     Agents,
     Instructions,
+    /// All supported resources
+    All,
 }
 
-impl From<VscodeResource> for ResourceType {
+impl From<VscodeResource> for Vec<ResourceType> {
     fn from(v: VscodeResource) -> Self {
         match v {
-            VscodeResource::Skills       => ResourceType::Skills,
-            VscodeResource::Agents       => ResourceType::Agents,
-            VscodeResource::Instructions => ResourceType::Instructions,
+            VscodeResource::Skills       => vec![ResourceType::Skills],
+            VscodeResource::Agents       => vec![ResourceType::Agents],
+            VscodeResource::Instructions => vec![ResourceType::Instructions],
+            VscodeResource::All          => vec![ResourceType::Skills, ResourceType::Agents, ResourceType::Instructions],
         }
     }
 }
@@ -199,12 +205,15 @@ impl From<VscodeResource> for ResourceType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum ClaudeCodeResource {
     Agents,
+    /// All supported resources
+    All,
 }
 
-impl From<ClaudeCodeResource> for ResourceType {
+impl From<ClaudeCodeResource> for Vec<ResourceType> {
     fn from(v: ClaudeCodeResource) -> Self {
         match v {
-            ClaudeCodeResource::Agents => ResourceType::Agents,
+            ClaudeCodeResource::Agents => vec![ResourceType::Agents],
+            ClaudeCodeResource::All    => vec![ResourceType::Agents],
         }
     }
 }
@@ -658,15 +667,15 @@ pub fn run(root: &Path, cmd: Commands) -> Result<()> {
                 crate::integrate::print_status(root);
             }
             IntegrateCommands::CopilotCli { resources, dry_run } => {
-                let res: Vec<ResourceType> = resources.into_iter().map(Into::into).collect();
+                let res: Vec<ResourceType> = resources.into_iter().flat_map(Vec::from).collect();
                 crate::integrate::integrate_copilot_cli(root, &res, dry_run)?;
             }
             IntegrateCommands::Vscode { resources, dry_run } => {
-                let res: Vec<ResourceType> = resources.into_iter().map(Into::into).collect();
+                let res: Vec<ResourceType> = resources.into_iter().flat_map(Vec::from).collect();
                 crate::integrate::integrate_vscode(root, &res, dry_run)?;
             }
             IntegrateCommands::ClaudeCode { resources, dry_run } => {
-                let res: Vec<ResourceType> = resources.into_iter().map(Into::into).collect();
+                let res: Vec<ResourceType> = resources.into_iter().flat_map(Vec::from).collect();
                 crate::integrate::integrate_claude_code(root, &res, dry_run)?;
             }
             IntegrateCommands::All { resources, dry_run } => {
