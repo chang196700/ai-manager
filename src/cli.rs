@@ -63,7 +63,7 @@ pub struct Cli {
 pub enum Commands {
     /// Initialize a new .ai workspace
     Init {
-        /// Target directory (default: current directory)
+        /// Target directory (default: $AI_HOME or ~/.ai)
         dir: Option<std::path::PathBuf>,
         /// Create missing files without overwriting existing ones
         #[arg(long)]
@@ -301,7 +301,7 @@ fn do_repo_update(root: &Path, name_filter: Option<&str>) -> Result<()> {
 pub fn init_workspace(dir: Option<std::path::PathBuf>, force: bool, override_files: bool) -> Result<()> {
     let target = match dir {
         Some(d) => d,
-        None => std::env::current_dir().context("getting current dir")?,
+        None => config::default_ai_home().context("determining default workspace directory")?,
     };
 
     std::fs::create_dir_all(&target)?;

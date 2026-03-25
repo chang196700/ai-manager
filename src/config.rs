@@ -86,15 +86,34 @@ pub fn save_local(root: &Path, config: &Config) -> Result<()> {
     std::fs::write(&path, content).with_context(|| format!("writing {}", path.display()))
 }
 
-pub fn find_root() -> Result<PathBuf> {
-    let mut current = std::env::current_dir().context("getting current dir")?;
-    loop {
-        if current.join("config.toml").exists() {
-            return Ok(current);
-        }
-        match current.parent() {
-            Some(p) => current = p.to_path_buf(),
-            None => anyhow::bail!("Could not find .ai workspace root (looking for config.toml)"),
-        }
+/// Returns the default .ai home directory.
+///
+/// Resolution order:
+/// 1. `AI_HOME` environment variable (if set)
+/// 2. `~/.ai` — `%USERPROFILE%\.ai` on Windows, `$HOME/.ai` on Unix/macOS
+pub fn default_ai_home() -> Result<PathBuf> {
+    if let Ok(val) = std::env::var("AI_HOME") {
+        return Ok(PathBuf::from(val));
     }
+    let home = home_dir().context("Could not determine home directory. Set AI_HOME to override.")?;
+    Ok(home.join(".ai"))
+}
+
+/// Returns the path to the user's home directory in a cross-platform way.
+fn home_dir() -> Option<PathBuf> {
+    // Try USERPROFILE (Windows), then HOME (Unix/macOS)
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(PathBuf::from)
+}
+
+pub fn find_root() -> Result<PathBuf> {
+    let root = default_ai_home()?;
+    if !root.exists() {
+        anyhow::bail!(
+            "Workspace not found at '{}'. Run `ai-manager init` to create it, or set AI_HOME to point to an existing workspace.",
+            root.display()
+        );
+    }
+    Ok(root)
 }
