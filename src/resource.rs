@@ -174,6 +174,21 @@ pub fn list_available(root: &Path, config: &Config, rtype: ResourceType) -> Resu
         };
 
         for scan_path in scan_paths {
+            // For directory-type resources: "" means the repo itself IS the resource
+            // (e.g. skills = [""] means the repo is a single skill)
+            if rtype.is_dir() && scan_path.is_empty() {
+                let base = root.join("repo").join(&repo.name);
+                if !base.exists() { continue; }
+                let source_value = format!("repo:{}:", repo.name);
+                if installed_values.contains(source_value.as_str()) { continue; }
+                items.push(AvailableItem {
+                    suggested_key: repo.name.clone(),
+                    source_value,
+                    display_source: format!("repo:{}", repo.name),
+                });
+                continue;
+            }
+
             let base = if scan_path.is_empty() || scan_path == "." {
                 root.join("repo").join(&repo.name)
             } else {
@@ -183,11 +198,12 @@ pub fn list_available(root: &Path, config: &Config, rtype: ResourceType) -> Resu
             if !base.exists() { continue; }
 
             if rtype.is_dir() {
+                // "." means the repo root is a directory of resources
                 let entries = match std::fs::read_dir(&base) { Ok(e) => e, Err(_) => continue };
                 for entry in entries.flatten() {
                     if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) { continue; }
                     let dirname = entry.file_name().to_string_lossy().to_string();
-                    let relpath = if scan_path.is_empty() || scan_path == "." {
+                    let relpath = if scan_path == "." {
                         dirname.clone()
                     } else {
                         format!("{}/{}", scan_path, dirname)

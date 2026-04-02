@@ -218,6 +218,23 @@ impl From<ClaudeCodeResource> for Vec<ResourceType> {
     }
 }
 
+use crate::integrate::IntegrateMode;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum IntegrateModeCli {
+    Config,
+    Link,
+}
+
+impl From<IntegrateModeCli> for IntegrateMode {
+    fn from(v: IntegrateModeCli) -> Self {
+        match v {
+            IntegrateModeCli::Config => IntegrateMode::Config,
+            IntegrateModeCli::Link => IntegrateMode::Link,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 pub enum IntegrateCommands {
     /// Show integration status for all tools
@@ -227,6 +244,9 @@ pub enum IntegrateCommands {
         /// Resources to integrate. Must specify at least one.
         #[arg(value_enum, required = true)]
         resources: Vec<CopilotCliResource>,
+        /// Integration mode: config (modify tool config) or link (create per-resource links)
+        #[arg(long, value_enum, default_value = "config")]
+        mode: IntegrateModeCli,
         /// Show what would be changed without applying
         #[arg(long)]
         dry_run: bool,
@@ -236,6 +256,9 @@ pub enum IntegrateCommands {
         /// Resources to integrate. Must specify at least one.
         #[arg(value_enum, required = true)]
         resources: Vec<VscodeResource>,
+        /// Integration mode: config (modify tool config) or link (create per-resource links)
+        #[arg(long, value_enum, default_value = "config")]
+        mode: IntegrateModeCli,
         /// Show what would be changed without applying
         #[arg(long)]
         dry_run: bool,
@@ -245,6 +268,9 @@ pub enum IntegrateCommands {
         /// Resources to integrate. Must specify at least one.
         #[arg(value_enum, required = true)]
         resources: Vec<ClaudeCodeResource>,
+        /// Integration mode: config (modify tool config) or link (create per-resource links)
+        #[arg(long, value_enum, default_value = "config")]
+        mode: IntegrateModeCli,
         /// Show what would be changed without applying
         #[arg(long)]
         dry_run: bool,
@@ -254,6 +280,9 @@ pub enum IntegrateCommands {
         /// Resource types to include (default: all supported per tool)
         #[arg(value_enum)]
         resources: Vec<ResourceTypeCli>,
+        /// Integration mode: config (modify tool config) or link (create per-resource links)
+        #[arg(long, value_enum, default_value = "config")]
+        mode: IntegrateModeCli,
         /// Show what would be changed without applying
         #[arg(long)]
         dry_run: bool,
@@ -332,6 +361,7 @@ pub fn init_workspace(dir: Option<std::path::PathBuf>, force: bool, override_fil
 
 # User local config (not synced)
 config.local.toml
+integrate.local.toml
 user.local/
 ";
 
@@ -525,6 +555,9 @@ pub fn run(root: &Path, cmd: Commands) -> Result<()> {
             if !ops.is_empty() {
                 config::save_shared(root, &shared)?;
             }
+
+            // Sync link-mode integrations
+            crate::integrate::apply_sync_links(root)?;
         }
 
         Commands::Tui => {
@@ -666,21 +699,21 @@ pub fn run(root: &Path, cmd: Commands) -> Result<()> {
             IntegrateCommands::Status => {
                 crate::integrate::print_status(root);
             }
-            IntegrateCommands::CopilotCli { resources, dry_run } => {
+            IntegrateCommands::CopilotCli { resources, mode, dry_run } => {
                 let res: Vec<ResourceType> = resources.into_iter().flat_map(Vec::from).collect();
-                crate::integrate::integrate_copilot_cli(root, &res, dry_run)?;
+                crate::integrate::integrate_copilot_cli(root, &res, dry_run, mode.into())?;
             }
-            IntegrateCommands::Vscode { resources, dry_run } => {
+            IntegrateCommands::Vscode { resources, mode, dry_run } => {
                 let res: Vec<ResourceType> = resources.into_iter().flat_map(Vec::from).collect();
-                crate::integrate::integrate_vscode(root, &res, dry_run)?;
+                crate::integrate::integrate_vscode(root, &res, dry_run, mode.into())?;
             }
-            IntegrateCommands::ClaudeCode { resources, dry_run } => {
+            IntegrateCommands::ClaudeCode { resources, mode, dry_run } => {
                 let res: Vec<ResourceType> = resources.into_iter().flat_map(Vec::from).collect();
-                crate::integrate::integrate_claude_code(root, &res, dry_run)?;
+                crate::integrate::integrate_claude_code(root, &res, dry_run, mode.into())?;
             }
-            IntegrateCommands::All { resources, dry_run } => {
+            IntegrateCommands::All { resources, mode, dry_run } => {
                 let res: Vec<ResourceType> = resources.into_iter().map(Into::into).collect();
-                crate::integrate::integrate_all(root, &res, dry_run)?;
+                crate::integrate::integrate_all(root, &res, dry_run, mode.into())?;
             }
         },
     }
